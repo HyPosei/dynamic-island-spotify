@@ -57,6 +57,7 @@ except ImportError:
     ColorThief = None
 
 try:
+    os.environ["QT_API"] = "pyside6"
     import qtawesome as qta
 except ImportError:
     qta = None
