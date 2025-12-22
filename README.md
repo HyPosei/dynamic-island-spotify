@@ -207,6 +207,22 @@ graph TD
 
 ---
 
+## 🗑️ Uninstall / Kaldırma
+
+To completely remove the application:
+
+1. **Double-click `uninstall.bat`** - This will:
+   - ✅ Close the running application
+   - ✅ Remove Windows startup entry
+   - ✅ Clean up registry settings
+
+2. **Delete the folder** - After running uninstall.bat, you can safely delete the entire folder.
+
+> [!TIP]
+> If you can't delete the folder because "file is in use", run `uninstall.bat` first to close the application.
+
+---
+
 ## 🎨 Customization
 
 Want to tweak the appearance? Edit the `Config` and `Colors` classes in [`dynamic_island.py`](file:///c:/Users/ismail/OneDrive/Desktop/projelerim/spoti/dynamic_island.py):

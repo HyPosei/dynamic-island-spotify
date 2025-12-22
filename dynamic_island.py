@@ -841,7 +841,7 @@ class DynamicIsland(QMainWindow):
     def _update_like_button(self):
         if self._is_liked:
             self.btn_like.setText("♥")
-            self.btn_like.set_active(True, Colors.LIKED)
+            self.btn_like.set_active(True, self.accent_color)
         else:
             self.btn_like.setText("♡")
             self.btn_like.set_active(False)
@@ -1022,19 +1022,39 @@ class DynamicIsland(QMainWindow):
 
     def _set_accent(self, color):
         self.accent_color = color
+        
+        # Update play button
         self.btn_play.base_color = color
         self.btn_play._update_style()
+        
+        # Update sliders
         self.seek_slider.set_accent(color)
         self.vol_slider.set_accent(color)
         
-        # Update all active buttons with new accent color
+        # Force update ALL buttons with new accent color
+        self._refresh_button_colors()
+        
+    def _refresh_button_colors(self):
+        """Refresh all button colors with current accent color"""
+        color = self.accent_color
+        
+        # Shuffle button
         if self._is_shuffle:
             self.btn_shuffle.set_active(True, color)
+        else:
+            self.btn_shuffle.set_active(False)
+            
+        # Like button
         if self._is_liked:
             self.btn_like.set_active(True, color)
-        # Update repeat button if active
+        else:
+            self.btn_like.set_active(False)
+            
+        # Repeat button
         if hasattr(self, '_is_repeat') and self._is_repeat != 'off':
             self.btn_repeat.set_active(True, color)
+        else:
+            self.btn_repeat.set_active(False)
                 
     def _update_vol_icon(self, vol):
         icon = "🔇" if vol == 0 else "🔈" if vol < 33 else "🔉" if vol < 66 else "🔊"
