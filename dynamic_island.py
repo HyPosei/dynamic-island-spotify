@@ -897,7 +897,7 @@ class DynamicIsland(QMainWindow):
             
     def _load_album_art(self, url):
         try:
-            response = requests.get(url, timeout=5)
+            response = requests.get(url, timeout=10)
             img_data = response.content
             
             if ColorThief:
@@ -909,7 +909,8 @@ class DynamicIsland(QMainWindow):
                     best_score = 0
                     for r, g, b in palette:
                         brightness = (r + g + b) / 3
-                        if brightness < 40 or brightness > 220:
+                        # Relaxed brightness range
+                        if brightness < 20 or brightness > 250:
                             continue
                         mx, mn = max(r, g, b), min(r, g, b)
                         saturation = (mx - mn) / (mx + 1)
@@ -922,6 +923,7 @@ class DynamicIsland(QMainWindow):
                         best_color = thief.get_color(quality=1)
                     
                     r, g, b = best_color
+                    # Boost saturation/brightness if needed
                     mx = max(r, g, b)
                     if mx > 0:
                         f = min(255/mx, 1.5)
@@ -935,8 +937,12 @@ class DynamicIsland(QMainWindow):
                         del DynamicIsland._color_cache[oldest]
                         
                     QTimer.singleShot(0, lambda c=color: self._set_accent(c))
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Color extraction error: {e}")
+                    QTimer.singleShot(0, lambda: self._set_accent(Colors.PRIMARY))
+            else:
+                print("ColorThief not installed, using default color")
+                QTimer.singleShot(0, lambda: self._set_accent(Colors.PRIMARY))
                 
             from PySide6.QtCore import QByteArray
             byte_array = QByteArray(img_data)
@@ -952,13 +958,13 @@ class DynamicIsland(QMainWindow):
                     del DynamicIsland._image_cache[oldest]
                     
                 QTimer.singleShot(0, self._apply_album_art)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Image load error: {e}")
             
     def _extract_color_only(self, url):
         try:
             if ColorThief:
-                response = requests.get(url, timeout=5)
+                response = requests.get(url, timeout=10)
                 thief = ColorThief(BytesIO(response.content))
                 palette = thief.get_palette(color_count=6, quality=1)
                 
@@ -966,7 +972,8 @@ class DynamicIsland(QMainWindow):
                 best_score = 0
                 for r, g, b in palette:
                     brightness = (r + g + b) / 3
-                    if brightness < 40 or brightness > 220:
+                    # Relaxed brightness range
+                    if brightness < 20 or brightness > 250:
                         continue
                     mx, mn = max(r, g, b), min(r, g, b)
                     saturation = (mx - mn) / (mx + 1)
@@ -986,8 +993,11 @@ class DynamicIsland(QMainWindow):
                 color = f"#{r:02x}{g:02x}{b:02x}"
                 DynamicIsland._color_cache[url] = color
                 QTimer.singleShot(0, lambda c=color: self._set_accent(c))
-        except Exception:
-            pass
+            else:
+                QTimer.singleShot(0, lambda: self._set_accent(Colors.PRIMARY))
+        except Exception as e:
+            print(f"Color extract only error: {e}")
+            QTimer.singleShot(0, lambda: self._set_accent(Colors.PRIMARY))
             
     def _create_rounded_pixmap(self, pixmap, size, radius):
         scaled = pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
