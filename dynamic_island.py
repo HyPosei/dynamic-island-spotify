@@ -207,10 +207,8 @@ class RoundedPanel(QWidget):
 class StyledButton(QPushButton):
     """Spotify-styled button with hover effects"""
     
-    def __init__(self, text, size=32, primary=False, parent=None):
+    def __init__(self, text, size=32, parent=None):
         super().__init__(text, parent)
-        self.primary = primary
-        self.base_color = "transparent"
         self.icon_color = "white"
         self.setFixedSize(size, size)
         self.setCursor(QCursor(Qt.PointingHandCursor))
@@ -219,7 +217,7 @@ class StyledButton(QPushButton):
     def _update_style(self):
         self.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.base_color};
+                background-color: transparent;
                 border: none;
                 border-radius: {self.width() // 2}px;
                 color: {self.icon_color};
@@ -235,7 +233,6 @@ class StyledButton(QPushButton):
         """)
         
     def set_active(self, active, color=None):
-        self.base_color = "transparent"
         self.icon_color = (color or Colors.PRIMARY) if active else "white"
         self._update_style()
 
@@ -664,7 +661,7 @@ class DynamicIsland(QMainWindow):
         self.btn_like = StyledButton("♡", 26)
         self.btn_repeat = StyledButton("↻", 26)
         self.btn_prev = StyledButton("⏮", 28)
-        self.btn_play = StyledButton("▶", 34, primary=True)
+        self.btn_play = StyledButton("▶", 34)
         self.btn_next = StyledButton("⏭", 28)
         self.btn_close = StyledButton("×", 24)
         
