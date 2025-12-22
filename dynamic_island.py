@@ -455,6 +455,7 @@ class DynamicIsland(QMainWindow):
     
     # Signals
     color_extracted = Signal(str)
+    album_art_loaded = Signal(QImage)
     
     # Caches (class-level)
     _image_cache = {}
@@ -500,6 +501,7 @@ class DynamicIsland(QMainWindow):
         
         # Connect signals
         self.color_extracted.connect(self._set_accent)
+        self.album_art_loaded.connect(self._on_album_art_loaded)
         
         # Spotify worker
         self.worker = SpotifyWorker()
@@ -946,18 +948,29 @@ class DynamicIsland(QMainWindow):
             byte_array = QByteArray(img_data)
             qimg = QImage()
             if qimg.loadFromData(byte_array):
-                pixmap = QPixmap.fromImage(qimg)
-                self._original_album_pixmap = pixmap
-                
-                # Cache with limit
-                DynamicIsland._image_cache[url] = pixmap
-                if len(DynamicIsland._image_cache) > Config.CACHE_MAX:
-                    oldest = next(iter(DynamicIsland._image_cache))
-                    del DynamicIsland._image_cache[oldest]
-                    
-                QTimer.singleShot(0, self._apply_album_art)
+                self.album_art_loaded.emit(qimg)
         except Exception as e:
             print(f"Image load error: {e}")
+            
+    def _on_album_art_loaded(self, image):
+        """Handle loaded album art image (Main Thread)"""
+        pixmap = QPixmap.fromImage(image)
+        self._original_album_pixmap = pixmap
+        
+        # Cache with limit - we store pixmap in cache
+        # Note: In a real app we might want to store URL with image to key it correctly
+        # But _load_album_art is called with specific URL, so we can't cache by URL here easily
+        # unless we pass URL in signal too.
+        # However, for simplicity let's skip caching here or assume cache hit is handled before load
+        
+        # Re-implement cache logic properly:
+        if self._current_image_url:
+            DynamicIsland._image_cache[self._current_image_url] = pixmap
+            if len(DynamicIsland._image_cache) > Config.CACHE_MAX:
+                oldest = next(iter(DynamicIsland._image_cache))
+                del DynamicIsland._image_cache[oldest]
+            
+        self._apply_album_art()
             
         try:
             if ColorThief:
