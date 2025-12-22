@@ -210,7 +210,7 @@ class StyledButton(QPushButton):
     def __init__(self, text, size=32, primary=False, parent=None):
         super().__init__(text, parent)
         self.primary = primary
-        self.base_color = Colors.PRIMARY if primary else Colors.ACCENT
+        self.base_color = "transparent"
         self.setFixedSize(size, size)
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self._update_style()
@@ -226,7 +226,7 @@ class StyledButton(QPushButton):
                 font-weight: bold;
             }}
             QPushButton:hover {{
-                background-color: {Colors.HOVER};
+                background-color: rgba(255, 255, 255, 0.1);
             }}
             QPushButton:pressed {{
                 background-color: {Colors.ACCENT};
@@ -234,7 +234,7 @@ class StyledButton(QPushButton):
         """)
         
     def set_active(self, active, color=None):
-        self.base_color = (color or Colors.PRIMARY) if active else Colors.ACCENT
+        self.base_color = (color or Colors.PRIMARY) if active else "transparent"
         self._update_style()
 
 
@@ -1028,15 +1028,14 @@ class DynamicIsland(QMainWindow):
     def _set_accent(self, color):
         self.accent_color = color
         
-        # Update play button
-        self.btn_play.base_color = color
-        self.btn_play._update_style()
+        # Play button background remains transparent, maybe update icon color if needed?
+        # For now, keeping it white on transparent background
         
         # Update sliders
         self.seek_slider.set_accent(color)
         self.vol_slider.set_accent(color)
         
-        # Force update ALL buttons with new accent color
+        # Force update ALL buttons with new accent color (for active states)
         self._refresh_button_colors()
         
     def _refresh_button_colors(self):
