@@ -211,6 +211,7 @@ class StyledButton(QPushButton):
         super().__init__(text, parent)
         self.primary = primary
         self.base_color = "transparent"
+        self.icon_color = "white"
         self.setFixedSize(size, size)
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self._update_style()
@@ -221,7 +222,7 @@ class StyledButton(QPushButton):
                 background-color: {self.base_color};
                 border: none;
                 border-radius: {self.width() // 2}px;
-                color: white;
+                color: {self.icon_color};
                 font-size: 14px;
                 font-weight: bold;
             }}
@@ -229,12 +230,13 @@ class StyledButton(QPushButton):
                 background-color: rgba(255, 255, 255, 0.1);
             }}
             QPushButton:pressed {{
-                background-color: {Colors.ACCENT};
+                background-color: rgba(255, 255, 255, 0.2);
             }}
         """)
         
     def set_active(self, active, color=None):
-        self.base_color = (color or Colors.PRIMARY) if active else "transparent"
+        self.base_color = "transparent"
+        self.icon_color = (color or Colors.PRIMARY) if active else "white"
         self._update_style()
 
 
