@@ -957,12 +957,6 @@ class DynamicIsland(QMainWindow):
         pixmap = QPixmap.fromImage(image)
         self._original_album_pixmap = pixmap
         
-        # Cache with limit - we store pixmap in cache
-        # Note: In a real app we might want to store URL with image to key it correctly
-        # But _load_album_art is called with specific URL, so we can't cache by URL here easily
-        # unless we pass URL in signal too.
-        # However, for simplicity let's skip caching here or assume cache hit is handled before load
-        
         # Re-implement cache logic properly:
         if self._current_image_url:
             DynamicIsland._image_cache[self._current_image_url] = pixmap
@@ -972,6 +966,7 @@ class DynamicIsland(QMainWindow):
             
         self._apply_album_art()
             
+    def _extract_color_only(self, url):
         try:
             if ColorThief:
                 response = requests.get(url, timeout=10)
