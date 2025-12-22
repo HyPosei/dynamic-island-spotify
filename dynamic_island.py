@@ -56,6 +56,11 @@ try:
 except ImportError:
     ColorThief = None
 
+try:
+    import qtawesome as qta
+except ImportError:
+    qta = None
+
 
 # ══════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -205,15 +210,32 @@ class RoundedPanel(QWidget):
 # ══════════════════════════════════════════════════════════════
 
 class StyledButton(QPushButton):
-    """Spotify-styled button with hover effects"""
+    """Spotify-styled button with hover effects and optional qtawesome icon"""
     
-    def __init__(self, text, size=32, parent=None):
-        super().__init__(text, parent)
+    def __init__(self, icon_name, fallback_text, size=32, parent=None):
+        super().__init__(parent)
+        self.icon_name = icon_name
+        self.fallback_text = fallback_text
         self.icon_color = "white"
         self.setFixedSize(size, size)
         self.setCursor(QCursor(Qt.PointingHandCursor))
+        self._update_icon()
         self._update_style()
         
+    def _update_icon(self):
+        if qta:
+            # Color conversion for qtawesome
+            c = self.icon_color
+            if c == Colors.PRIMARY: c = "#1DB954" # Ensure hex
+            elif c == Colors.ACCENT: c = "#2a2a2a"
+            
+            self.setIcon(qta.icon(self.icon_name, color=c))
+            icon_size = int(self.width() * 0.6)
+            self.setIconSize(self.size() * 0.6)
+            self.setText("")
+        else:
+            self.setText(self.fallback_text)
+            
     def _update_style(self):
         self.setStyleSheet(f"""
             QPushButton {{
@@ -221,7 +243,7 @@ class StyledButton(QPushButton):
                 border: none;
                 border-radius: {self.width() // 2}px;
                 color: {self.icon_color};
-                font-size: 14px;
+                font-size: 16px;
                 font-weight: bold;
             }}
             QPushButton:hover {{
@@ -234,7 +256,14 @@ class StyledButton(QPushButton):
         
     def set_active(self, active, color=None):
         self.icon_color = (color or Colors.PRIMARY) if active else "white"
+        self._update_icon()
         self._update_style()
+        
+    def set_icon_state(self, icon_name, fallback_text):
+        """Update icon/text for toggle states (like Play/Pause or Repeat modes)"""
+        self.icon_name = icon_name
+        self.fallback_text = fallback_text
+        self._update_icon()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -657,13 +686,14 @@ class DynamicIsland(QMainWindow):
         controls_layout.setSpacing(4)
         
         # New buttons: Shuffle, Like
-        self.btn_shuffle = StyledButton("🔀", 26)
-        self.btn_like = StyledButton("♡", 26)
-        self.btn_repeat = StyledButton("↻", 26)
-        self.btn_prev = StyledButton("⏮", 28)
-        self.btn_play = StyledButton("▶", 34)
-        self.btn_next = StyledButton("⏭", 28)
-        self.btn_close = StyledButton("×", 24)
+        # New buttons: Shuffle, Like
+        self.btn_shuffle = StyledButton("fa5s.random", "🔀", 26)
+        self.btn_like = StyledButton("fa5s.heart", "♡", 26)
+        self.btn_repeat = StyledButton("fa5s.redo", "↻", 26)
+        self.btn_prev = StyledButton("fa5s.step-backward", "⏮", 28)
+        self.btn_play = StyledButton("fa5s.play", "▶", 34)
+        self.btn_next = StyledButton("fa5s.step-forward", "⏭", 28)
+        self.btn_close = StyledButton("fa5s.times", "×", 24)
         
         self.btn_shuffle.clicked.connect(self._toggle_shuffle)
         self.btn_like.clicked.connect(self._toggle_like)
@@ -802,7 +832,7 @@ class DynamicIsland(QMainWindow):
         if not data:
             self.title_label.setText("Not Playing")
             self.artist_label.setText("Open Spotify")
-            self.btn_play.setText("▶")
+            self.btn_play.set_icon_state("fa5s.play", "▶")
             self.album_art.setText("♪")
             self.album_art.setPixmap(QPixmap())
             self._set_accent(Colors.PRIMARY)
@@ -847,10 +877,10 @@ class DynamicIsland(QMainWindow):
             
     def _update_like_button(self):
         if self._is_liked:
-            self.btn_like.setText("♥")
+            self.btn_like.set_icon_state("fa5s.heart", "♥") # Solid heart
             self.btn_like.set_active(True, self.accent_color)
         else:
-            self.btn_like.setText("♡")
+            self.btn_like.set_icon_state("fa5r.heart" if qta else "fa5s.heart", "♡") # Outline/Regular
             self.btn_like.set_active(False)
             
     def _on_playback_update(self, data):
@@ -858,7 +888,10 @@ class DynamicIsland(QMainWindow):
             return
             
         is_playing = data.get('is_playing', False)
-        self.btn_play.setText("⏸" if is_playing else "▶")
+        if is_playing:
+            self.btn_play.set_icon_state("fa5s.pause", "⏸")
+        else:
+            self.btn_play.set_icon_state("fa5s.play", "▶")
         
         # Shuffle state - use accent color
         self._is_shuffle = data.get('shuffle_state', False)
@@ -870,13 +903,17 @@ class DynamicIsland(QMainWindow):
         # Repeat state - use accent color
         self._is_repeat = data.get('repeat_state', 'off')
         if self._is_repeat == 'context':
-            self.btn_repeat.setText("🔁")
+            # Context repeat (All)
+            self.btn_repeat.set_icon_state("fa5s.redo", "🔁")
             self.btn_repeat.set_active(True, self.accent_color)
         elif self._is_repeat == 'track':
-            self.btn_repeat.setText("🔂")
+            # Track repeat (One) - qtawesome doesn't support overlays easily
+            # We can use a different icon like 'fa5s.sync' or just same icon with active color
+            # Or use 'fa5s.history' to differentiate
+            self.btn_repeat.set_icon_state("fa5s.sync", "🔂")
             self.btn_repeat.set_active(True, self.accent_color)
         else:
-            self.btn_repeat.setText("↻")
+            self.btn_repeat.set_icon_state("fa5s.redo", "↻")
             self.btn_repeat.set_active(False)
             
         # Volume
