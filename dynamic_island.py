@@ -453,6 +453,9 @@ class SettingsDialog(QDialog):
 
 class DynamicIsland(QMainWindow):
     
+    # Signals
+    color_extracted = Signal(str)
+    
     # Caches (class-level)
     _image_cache = {}
     _color_cache = {}
@@ -494,6 +497,9 @@ class DynamicIsland(QMainWindow):
         
         # Animations
         self._setup_animations()
+        
+        # Connect signals
+        self.color_extracted.connect(self._set_accent)
         
         # Spotify worker
         self.worker = SpotifyWorker()
@@ -928,13 +934,13 @@ class DynamicIsland(QMainWindow):
                         oldest = next(iter(DynamicIsland._color_cache))
                         del DynamicIsland._color_cache[oldest]
                         
-                    QTimer.singleShot(0, lambda c=color: self._set_accent(c))
+                    self.color_extracted.emit(color)
                 except Exception as e:
                     print(f"Color extraction error: {e}")
-                    QTimer.singleShot(0, lambda: self._set_accent(Colors.PRIMARY))
+                    self.color_extracted.emit(Colors.PRIMARY)
             else:
                 print("ColorThief not installed, using default color")
-                QTimer.singleShot(0, lambda: self._set_accent(Colors.PRIMARY))
+                self.color_extracted.emit(Colors.PRIMARY)
                 
             from PySide6.QtCore import QByteArray
             byte_array = QByteArray(img_data)
@@ -973,12 +979,12 @@ class DynamicIsland(QMainWindow):
                 
                 color = f"#{r:02x}{g:02x}{b:02x}"
                 DynamicIsland._color_cache[url] = color
-                QTimer.singleShot(0, lambda c=color: self._set_accent(c))
+                self.color_extracted.emit(color)
             else:
-                QTimer.singleShot(0, lambda: self._set_accent(Colors.PRIMARY))
+                self.color_extracted.emit(Colors.PRIMARY)
         except Exception as e:
             print(f"Color extract only error: {e}")
-            QTimer.singleShot(0, lambda: self._set_accent(Colors.PRIMARY))
+            self.color_extracted.emit(Colors.PRIMARY)
             
     def _create_rounded_pixmap(self, pixmap, size, radius):
         scaled = pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
