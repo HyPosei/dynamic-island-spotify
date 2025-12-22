@@ -1,0 +1,43 @@
+# Environment and credentials
+.env
+.spotify_cache
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments (all variants)
+venv/
+env/
+.venv/
+ENV/
+dynamic_island_env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# Project specific
+*.txt
+!requirements.txt
+
+# Logs and temporary files
+*.log
+*.tmp
+.cache/
