@@ -903,31 +903,23 @@ class DynamicIsland(QMainWindow):
             if ColorThief:
                 try:
                     thief = ColorThief(BytesIO(img_data))
-                    palette = thief.get_palette(color_count=6, quality=1)
+                    # Get dominant color directly
+                    r, g, b = thief.get_color(quality=1)
                     
-                    best_color = None
-                    best_score = 0
-                    for r, g, b in palette:
-                        brightness = (r + g + b) / 3
-                        # Relaxed brightness range
-                        if brightness < 20 or brightness > 250:
-                            continue
-                        mx, mn = max(r, g, b), min(r, g, b)
-                        saturation = (mx - mn) / (mx + 1)
-                        score = saturation * brightness
-                        if score > best_score:
-                            best_score = score
-                            best_color = (r, g, b)
+                    # Ensure color is not too dark (since bg is dark)
+                    brightness = (r + g + b) / 3
+                    if brightness < 60:
+                        # Brighten the color
+                        factor = 1.5
+                        r = min(255, int(r * factor))
+                        g = min(255, int(g * factor))
+                        b = min(255, int(b * factor))
+                        
+                        # If still too dark, fallback to primary or boost more
+                        if (r + g + b) / 3 < 60:
+                            # Use a lighter version of the color
+                            r, g, b = [min(255, c + 60) for c in (r, g, b)]
                     
-                    if not best_color:
-                        best_color = thief.get_color(quality=1)
-                    
-                    r, g, b = best_color
-                    # Boost saturation/brightness if needed
-                    mx = max(r, g, b)
-                    if mx > 0:
-                        f = min(255/mx, 1.5)
-                        r, g, b = [min(255, int(c*f)) for c in (r, g, b)]
                     color = f"#{r:02x}{g:02x}{b:02x}"
                     
                     # Cache with limit
@@ -961,35 +953,24 @@ class DynamicIsland(QMainWindow):
         except Exception as e:
             print(f"Image load error: {e}")
             
-    def _extract_color_only(self, url):
         try:
             if ColorThief:
                 response = requests.get(url, timeout=10)
                 thief = ColorThief(BytesIO(response.content))
-                palette = thief.get_palette(color_count=6, quality=1)
+                # Get dominant color directly
+                r, g, b = thief.get_color(quality=1)
                 
-                best_color = None
-                best_score = 0
-                for r, g, b in palette:
-                    brightness = (r + g + b) / 3
-                    # Relaxed brightness range
-                    if brightness < 20 or brightness > 250:
-                        continue
-                    mx, mn = max(r, g, b), min(r, g, b)
-                    saturation = (mx - mn) / (mx + 1)
-                    score = saturation * brightness
-                    if score > best_score:
-                        best_score = score
-                        best_color = (r, g, b)
+                # Ensure color is not too dark
+                brightness = (r + g + b) / 3
+                if brightness < 60:
+                    factor = 1.5
+                    r = min(255, int(r * factor))
+                    g = min(255, int(g * factor))
+                    b = min(255, int(b * factor))
+                    
+                    if (r + g + b) / 3 < 60:
+                         r, g, b = [min(255, c + 60) for c in (r, g, b)]
                 
-                if not best_color:
-                    best_color = thief.get_color(quality=1)
-                
-                r, g, b = best_color
-                mx = max(r, g, b)
-                if mx > 0:
-                    f = min(255/mx, 1.5)
-                    r, g, b = [min(255, int(c*f)) for c in (r, g, b)]
                 color = f"#{r:02x}{g:02x}{b:02x}"
                 DynamicIsland._color_cache[url] = color
                 QTimer.singleShot(0, lambda c=color: self._set_accent(c))
