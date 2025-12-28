@@ -1,10 +1,11 @@
-# Environment and credentials - NEVER COMMIT THESE
+# Environment and Credentials - NEVER COMMIT
 .env
 .env.local
 .env.*.local
 .spotify_cache
 *.pem
 *.key
+secrets.*
 
 # Python
 __pycache__/
@@ -14,36 +15,42 @@ __pycache__/
 .Python
 *.egg-info/
 .eggs/
+pip-log.txt
 
-# Virtual environments (all variants)
+# Virtual Environments
 venv/
 env/
 .venv/
 ENV/
-dynamic_island_env/
+.env/
 
-# IDE
+# IDE and Editors
 .idea/
 .vscode/
 *.swp
 *.swo
 *.code-workspace
+.project
+.settings/
 
-# OS
+# OS Files
 .DS_Store
 Thumbs.db
 desktop.ini
+*.lnk
 
-# PyInstaller build artifacts
+# Build Artifacts
 build/
 dist/
 *.spec
+*.exe
+*.msi
 
-# Project specific
-*.txt
-!requirements.txt
-
-# Logs and temporary files
+# Logs and Temp
 *.log
 *.tmp
 .cache/
+temp/
+
+# Project Specific
+!requirements.txt
