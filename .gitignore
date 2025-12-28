@@ -1,6 +1,10 @@
-# Environment and credentials
+# Environment and credentials - NEVER COMMIT THESE
 .env
+.env.local
+.env.*.local
 .spotify_cache
+*.pem
+*.key
 
 # Python
 __pycache__/
@@ -8,6 +12,8 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.egg-info/
+.eggs/
 
 # Virtual environments (all variants)
 venv/

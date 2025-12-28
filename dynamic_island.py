@@ -14,466 +14,32 @@ Features:
 import sys
 import os
 import threading
-import time
 from io import BytesIO
-
-# Handle PyInstaller exe - find the correct base path
-if getattr(sys, 'frozen', False):
-    # Running as exe
-    BASE_DIR = os.path.dirname(sys.executable)
-else:
-    # Running as script
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Change working directory to base dir (for .env and cache files)
-os.chdir(BASE_DIR)
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, 
-    QPushButton, QSlider, QHBoxLayout, QVBoxLayout,
-    QGraphicsDropShadowEffect, QSystemTrayIcon, QMenu,
-    QDialog, QCheckBox, QSpinBox, QFormLayout, QGroupBox
+    QHBoxLayout, QVBoxLayout,
+    QGraphicsDropShadowEffect, QSystemTrayIcon, QMenu
 )
 from PySide6.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, 
-    Signal, QObject, QRect, QSettings
+    Signal, QRect, QSettings
 )
 from PySide6.QtGui import (
-    QColor, QPainter, QBrush, QPen, 
-    QPixmap, QImage, QPainterPath, QCursor, QIcon, QAction
+    QColor, QPainter, QBrush, QPen,
+    QPixmap, QImage, QPainterPath, QIcon, QAction
 )
 
 import requests
-from dotenv import load_dotenv
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 
-# Load .env file
-load_dotenv(os.path.join(BASE_DIR, '.env'))
-
-try:
-    from colorthief import ColorThief
-except ImportError:
-    ColorThief = None
-
-try:
-    os.environ["QT_API"] = "pyside6"
-    import qtawesome as qta
-except ImportError:
-    qta = None
-
-
-# ══════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ══════════════════════════════════════════════════════════════
-
-# Load credentials from environment variables (set in .env file)
-CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI", "http://localhost:8888/callback")
-SCOPE = "user-read-playback-state user-modify-playback-state user-library-modify user-library-read"
-
-
-class Colors:
-    PRIMARY = "#1DB954"
-    BG = "#0d0d0d"
-    CARD = "#1a1a1a"
-    HOVER = "#252525"
-    TEXT = "#ffffff"
-    TEXT_DIM = "#888888"
-    ACCENT = "#2a2a2a"
-    ERROR = "#ff4757"
-    BORDER = "#333333"
-    LIKED = "#1DB954"
-
-
-class Config:
-    COLLAPSED_W, COLLAPSED_H = 200, 52
-    EXPANDED_W, EXPANDED_H = 480, 150
-    ANIMATION_MS = 350
-    POLL_FAST = 0.5      # When playing
-    POLL_SLOW = 2.0      # When paused/idle
-    CACHE_MAX = 50       # Max cached images/colors
-
-
-# ══════════════════════════════════════════════════════════════
-# SPOTIFY WORKER THREAD
-# ══════════════════════════════════════════════════════════════
-
-class SpotifyWorker(QObject):
-    """Background thread for Spotify API calls with adaptive polling"""
-    track_updated = Signal(dict)
-    playback_updated = Signal(dict)
-    error = Signal(str)
-    
-    def __init__(self):
-        super().__init__()
-        self.running = True
-        self.sp = None
-        self._is_playing = False
-        self._init_spotify()
-        
-    def _init_spotify(self):
-        try:
-            self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-                client_id=CLIENT_ID,
-                client_secret=CLIENT_SECRET,
-                redirect_uri=REDIRECT_URI,
-                scope=SCOPE,
-                cache_path=os.path.join(BASE_DIR, ".spotify_cache")
-            ))
-        except Exception as e:
-            self.error.emit(str(e))
-            
-    def poll(self):
-        last_track_id = None
-        while self.running:
-            if self.sp:
-                try:
-                    playback = self.sp.current_playback()
-                    if playback and playback.get('item'):
-                        self._is_playing = playback.get('is_playing', False)
-                        self.playback_updated.emit(playback)
-                        
-                        track_id = playback['item']['id']
-                        if track_id != last_track_id:
-                            last_track_id = track_id
-                            self.track_updated.emit(playback)
-                    else:
-                        self._is_playing = False
-                        if last_track_id:
-                            last_track_id = None
-                            self.track_updated.emit({})
-                except Exception as e:
-                    if "expired" in str(e).lower():
-                        self._init_spotify()
-            
-            # Adaptive polling - faster when playing
-            sleep_time = Config.POLL_FAST if self._is_playing else Config.POLL_SLOW
-            time.sleep(sleep_time)
-            
-    def stop(self):
-        self.running = False
-        
-    def toggle_like(self, track_id):
-        """Toggle like status for a track"""
-        try:
-            is_saved = self.sp.current_user_saved_tracks_contains([track_id])[0]
-            if is_saved:
-                self.sp.current_user_saved_tracks_delete([track_id])
-                return False
-            else:
-                self.sp.current_user_saved_tracks_add([track_id])
-                return True
-        except Exception as e:
-            print(f"Like toggle error: {e}")
-            return None
-            
-    def is_liked(self, track_id):
-        """Check if track is liked"""
-        try:
-            result = self.sp.current_user_saved_tracks_contains([track_id])
-            return result[0] if result else False
-        except Exception as e:
-            print(f"Check liked error: {e}")
-            return False
-
-
-# ══════════════════════════════════════════════════════════════
-# ROUNDED PANEL WIDGET
-# ══════════════════════════════════════════════════════════════
-
-class RoundedPanel(QWidget):
-    """Custom widget with rounded corners and shadow"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.bg_color = QColor(Colors.CARD)
-        self.border_color = QColor(Colors.BORDER)
-        self.corner_radius = 26
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        path = QPainterPath()
-        path.addRoundedRect(0, 0, self.width(), self.height(), 
-                           self.corner_radius, self.corner_radius)
-        
-        painter.fillPath(path, QBrush(self.bg_color))
-        painter.setPen(QPen(self.border_color, 1))
-        painter.drawPath(path)
-
-
-# ══════════════════════════════════════════════════════════════
-# STYLED BUTTON
-# ══════════════════════════════════════════════════════════════
-
-class StyledButton(QPushButton):
-    """Spotify-styled button with hover effects and optional qtawesome icon"""
-    
-    def __init__(self, icon_name, fallback_text, size=32, parent=None):
-        super().__init__(parent)
-        self.icon_name = icon_name
-        self.fallback_text = fallback_text
-        self.icon_color = "white"
-        self.setFixedSize(size, size)
-        self.setCursor(QCursor(Qt.PointingHandCursor))
-        self._update_icon()
-        self._update_style()
-        
-    def _update_icon(self):
-        if qta:
-            # Color conversion for qtawesome
-            c = self.icon_color
-            if c == Colors.PRIMARY: c = "#1DB954" # Ensure hex
-            elif c == Colors.ACCENT: c = "#2a2a2a"
-            
-            self.setIcon(qta.icon(self.icon_name, color=c))
-            icon_size = int(self.width() * 0.6)
-            self.setIconSize(self.size() * 0.6)
-            self.setText("")
-        else:
-            self.setText(self.fallback_text)
-            
-    def _update_style(self):
-        self.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent;
-                border: none;
-                border-radius: {self.width() // 2}px;
-                color: {self.icon_color};
-                font-size: 16px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: rgba(255, 255, 255, 0.1);
-            }}
-            QPushButton:pressed {{
-                background-color: rgba(255, 255, 255, 0.2);
-            }}
-        """)
-        
-    def set_active(self, active, color=None):
-        self.icon_color = (color or Colors.PRIMARY) if active else "white"
-        self._update_icon()
-        self._update_style()
-        
-    def set_icon_state(self, icon_name, fallback_text):
-        """Update icon/text for toggle states (like Play/Pause or Repeat modes)"""
-        self.icon_name = icon_name
-        self.fallback_text = fallback_text
-        self._update_icon()
-
-
-# ══════════════════════════════════════════════════════════════
-# STYLED SLIDER
-# ══════════════════════════════════════════════════════════════
-
-class StyledSlider(QSlider):
-    """Spotify-styled slider"""
-    
-    def __init__(self, parent=None):
-        super().__init__(Qt.Horizontal, parent)
-        self.accent_color = Colors.PRIMARY
-        self._update_style()
-        self.setCursor(QCursor(Qt.PointingHandCursor))
-        
-    def _update_style(self):
-        self.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                background: {Colors.ACCENT};
-                height: 4px;
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                background: {self.accent_color};
-                width: 12px;
-                height: 12px;
-                margin: -4px 0;
-                border-radius: 6px;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: {self.accent_color};
-                border-radius: 2px;
-            }}
-        """)
-        
-    def set_accent(self, color):
-        self.accent_color = color
-        self._update_style()
-
-
-# ══════════════════════════════════════════════════════════════
-# SETTINGS DIALOG
-# ══════════════════════════════════════════════════════════════
-
-class SettingsDialog(QDialog):
-    """Settings dialog for app configuration"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent_window = parent
-        self.setWindowTitle("Ayarlar / Settings")
-        self.setFixedSize(350, 300)
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {Colors.CARD};
-                color: {Colors.TEXT};
-            }}
-            QGroupBox {{
-                font-weight: bold;
-                border: 1px solid {Colors.BORDER};
-                border-radius: 8px;
-                margin-top: 12px;
-                padding-top: 8px;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }}
-            QCheckBox {{
-                color: {Colors.TEXT};
-                spacing: 8px;
-            }}
-            QCheckBox::indicator {{
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                border: 2px solid {Colors.BORDER};
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {Colors.PRIMARY};
-                border-color: {Colors.PRIMARY};
-            }}
-            QPushButton {{
-                background-color: {Colors.PRIMARY};
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                color: white;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: #1ed760;
-            }}
-        """)
-        
-        self._build_ui()
-        self._load_settings()
-        
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        
-        # Startup group
-        startup_group = QGroupBox("Başlangıç / Startup")
-        startup_layout = QVBoxLayout(startup_group)
-        
-        self.startup_check = QCheckBox("Windows ile başlat / Start with Windows")
-        startup_layout.addWidget(self.startup_check)
-        
-        layout.addWidget(startup_group)
-        
-        # Appearance group
-        appearance_group = QGroupBox("Görünüm / Appearance")
-        appearance_layout = QVBoxLayout(appearance_group)
-        
-        self.always_top_check = QCheckBox("Her zaman üstte / Always on top")
-        self.always_top_check.setChecked(True)
-        appearance_layout.addWidget(self.always_top_check)
-        
-        layout.addWidget(appearance_group)
-        
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        
-        save_btn = QPushButton("Kaydet / Save")
-        save_btn.clicked.connect(self._save_settings)
-        btn_layout.addWidget(save_btn)
-        
-        reset_btn = QPushButton("Konumu Sıfırla / Reset Position")
-        reset_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {Colors.ACCENT};
-            }}
-            QPushButton:hover {{
-                background-color: {Colors.HOVER};
-            }}
-        """)
-        reset_btn.clicked.connect(self._reset_position)
-        btn_layout.addWidget(reset_btn)
-        
-        layout.addLayout(btn_layout)
-        layout.addStretch()
-        
-    def _load_settings(self):
-        if self.parent_window:
-            settings = self.parent_window.settings
-            self.startup_check.setChecked(settings.value("startup_enabled", False, type=bool))
-            self.always_top_check.setChecked(settings.value("always_on_top", True, type=bool))
-            
-    def _save_settings(self):
-        if self.parent_window:
-            settings = self.parent_window.settings
-            
-            # Save startup setting
-            startup_enabled = self.startup_check.isChecked()
-            settings.setValue("startup_enabled", startup_enabled)
-            self._set_startup(startup_enabled)
-            
-            # Save always on top setting
-            always_top = self.always_top_check.isChecked()
-            settings.setValue("always_on_top", always_top)
-            self._apply_always_on_top(always_top)
-            
-        self.accept()
-        
-    def _set_startup(self, enabled):
-        """Add/remove from Windows startup"""
-        if sys.platform == 'win32':
-            import winreg
-            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-            app_name = "DynamicIslandSpotify"
-            
-            try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
-                if enabled:
-                    # Get the path to the exe or python script
-                    if getattr(sys, 'frozen', False):
-                        exe_path = sys.executable
-                    else:
-                        exe_path = f'pythonw "{os.path.abspath(__file__)}"'
-                    winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
-                else:
-                    try:
-                        winreg.DeleteValue(key, app_name)
-                    except FileNotFoundError:
-                        pass
-                winreg.CloseKey(key)
-            except Exception as e:
-                print(f"Startup registry error: {e}")
-                
-    def _apply_always_on_top(self, enabled):
-        if self.parent_window:
-            flags = self.parent_window.windowFlags()
-            if enabled:
-                flags |= Qt.WindowStaysOnTopHint
-            else:
-                flags &= ~Qt.WindowStaysOnTopHint
-            self.parent_window.setWindowFlags(flags)
-            self.parent_window.show()
-            
-    def _reset_position(self):
-        if self.parent_window:
-            screen = QApplication.primaryScreen().geometry()
-            x = (screen.width() - Config.COLLAPSED_W) // 2
-            self.parent_window.move(x, 10)
-            self.parent_window.settings.remove("pos_x")
-            self.parent_window.settings.remove("pos_y")
+# Import from core package
+from core import (
+    Colors, Config, BASE_DIR,
+    SpotifyWorker,
+    RoundedPanel, StyledButton, StyledSlider,
+    SettingsDialog
+)
+from core.config import ColorThief, qta
 
 
 # ══════════════════════════════════════════════════════════════
@@ -485,6 +51,7 @@ class DynamicIsland(QMainWindow):
     # Signals
     color_extracted = Signal(str)
     album_art_loaded = Signal(QImage)
+    like_toggled = Signal()  # New signal for like button update
     
     # Caches (class-level)
     _image_cache = {}
@@ -517,6 +84,10 @@ class DynamicIsland(QMainWindow):
         self._is_shuffle = False
         self._is_repeat = 'off'
         
+        # Load settings
+        self.mini_mode = self.settings.value("mini_mode", False, type=bool)
+        self.button_size = self.settings.value("button_size", 32, type=int)
+        
         # Initial size
         self._current_w = Config.COLLAPSED_W
         self._current_h = Config.COLLAPSED_H
@@ -531,6 +102,7 @@ class DynamicIsland(QMainWindow):
         # Connect signals
         self.color_extracted.connect(self._set_accent)
         self.album_art_loaded.connect(self._on_album_art_loaded)
+        self.like_toggled.connect(self._update_like_button)
         
         # Spotify worker
         self.worker = SpotifyWorker()
@@ -687,14 +259,14 @@ class DynamicIsland(QMainWindow):
         controls_layout.setSpacing(4)
         
         # New buttons: Shuffle, Like
-        # New buttons: Shuffle, Like
-        self.btn_shuffle = StyledButton("fa5s.random", "🔀", 26)
-        self.btn_like = StyledButton("fa5s.heart", "♡", 26)
-        self.btn_repeat = StyledButton("fa5s.redo", "↻", 26)
-        self.btn_prev = StyledButton("fa5s.step-backward", "⏮", 28)
-        self.btn_play = StyledButton("fa5s.play", "▶", 34)
-        self.btn_next = StyledButton("fa5s.step-forward", "⏭", 28)
-        self.btn_close = StyledButton("fa5s.times", "×", 24)
+        bs = self.button_size  # Base button size
+        self.btn_shuffle = StyledButton("fa5s.random", "⇌", bs)
+        self.btn_like = StyledButton("mdi.heart-outline", "♡", bs)
+        self.btn_repeat = StyledButton("fa5s.redo", "↻", bs)
+        self.btn_prev = StyledButton("fa5s.step-backward", "◀◀", bs + 2)
+        self.btn_play = StyledButton("fa5s.play", "▶", bs + 10)
+        self.btn_next = StyledButton("fa5s.step-forward", "▶▶", bs + 2)
+        self.btn_close = StyledButton("fa5s.times", "×", bs - 4)
         
         self.btn_shuffle.clicked.connect(self._toggle_shuffle)
         self.btn_like.clicked.connect(self._toggle_like)
@@ -761,7 +333,7 @@ class DynamicIsland(QMainWindow):
         self._collapse()
         
     def _expand(self):
-        if self.is_expanded:
+        if self.is_expanded or self.mini_mode:
             return
         self.is_expanded = True
         
@@ -878,11 +450,13 @@ class DynamicIsland(QMainWindow):
             
     def _update_like_button(self):
         if self._is_liked:
-            self.btn_like.set_icon_state("fa5s.heart", "♥") # Solid heart
+            # Solid filled heart when liked
+            self.btn_like.set_icon_state("mdi.heart", "❤")
             self.btn_like.set_active(True, self.accent_color)
         else:
-            self.btn_like.set_icon_state("fa5r.heart" if qta else "fa5s.heart", "♡") # Outline/Regular
-            self.btn_like.set_active(False)
+            # Outline heart when not liked
+            self.btn_like.set_icon_state("mdi.heart-outline", "♡")
+            self.btn_like.set_color(self.accent_color)
             
     def _on_playback_update(self, data):
         if not data:
@@ -890,7 +464,7 @@ class DynamicIsland(QMainWindow):
             
         is_playing = data.get('is_playing', False)
         if is_playing:
-            self.btn_play.set_icon_state("fa5s.pause", "⏸")
+            self.btn_play.set_icon_state("fa5s.pause", "❚❚")
         else:
             self.btn_play.set_icon_state("fa5s.play", "▶")
         
@@ -899,23 +473,22 @@ class DynamicIsland(QMainWindow):
         if self._is_shuffle:
             self.btn_shuffle.set_active(True, self.accent_color)
         else:
-            self.btn_shuffle.set_active(False)
+            self.btn_shuffle.set_color(self.accent_color)  # Use accent color even when inactive
         
         # Repeat state - use accent color
         self._is_repeat = data.get('repeat_state', 'off')
         if self._is_repeat == 'context':
-            # Context repeat (All)
-            self.btn_repeat.set_icon_state("fa5s.redo", "🔁")
+            # Context repeat (All) - infinity symbol
+            self.btn_repeat.set_icon_state("fa5s.redo", "∞")
             self.btn_repeat.set_active(True, self.accent_color)
         elif self._is_repeat == 'track':
-            # Track repeat (One) - qtawesome doesn't support overlays easily
-            # We can use a different icon like 'fa5s.sync' or just same icon with active color
-            # Or use 'fa5s.history' to differentiate
-            self.btn_repeat.set_icon_state("fa5s.sync", "🔂")
+            # Track repeat (One) - "1" with circle
+            self.btn_repeat.set_icon_state("fa5s.sync", "¹↻")
             self.btn_repeat.set_active(True, self.accent_color)
         else:
+            # Repeat off
             self.btn_repeat.set_icon_state("fa5s.redo", "↻")
-            self.btn_repeat.set_active(False)
+            self.btn_repeat.set_color(self.accent_color)  # Use accent color even when inactive
             
         # Volume
         device = data.get('device', {})
@@ -1079,23 +652,41 @@ class DynamicIsland(QMainWindow):
         """Refresh all button colors with current accent color"""
         color = self.accent_color
         
-        # Shuffle button
+        # Shuffle button - always use accent color
         if self._is_shuffle:
             self.btn_shuffle.set_active(True, color)
         else:
-            self.btn_shuffle.set_active(False)
+            self.btn_shuffle.set_color(color)
             
         # Like button
         if self._is_liked:
             self.btn_like.set_active(True, color)
         else:
-            self.btn_like.set_active(False)
+            self.btn_like.set_color(color)
             
         # Repeat button
         if hasattr(self, '_is_repeat') and self._is_repeat != 'off':
             self.btn_repeat.set_active(True, color)
         else:
-            self.btn_repeat.set_active(False)
+            self.btn_repeat.set_color(color)
+        
+        # Control buttons - always use accent color
+        self.btn_prev.set_color(color)
+        self.btn_play.set_color(color)
+        self.btn_next.set_color(color)
+        
+    def _apply_button_size(self, size):
+        """Apply new button size to all buttons"""
+        self.button_size = size
+        self.btn_shuffle.setFixedSize(size, size)
+        self.btn_like.setFixedSize(size, size)
+        self.btn_repeat.setFixedSize(size, size)
+        self.btn_prev.setFixedSize(size + 2, size + 2)
+        self.btn_play.setFixedSize(size + 10, size + 10)
+        self.btn_next.setFixedSize(size + 2, size + 2)
+        self.btn_close.setFixedSize(size - 4, size - 4)
+        # Refresh icons with new size
+        self._refresh_button_colors()
                 
     def _update_vol_icon(self, vol):
         icon = "🔇" if vol == 0 else "🔈" if vol < 33 else "🔉" if vol < 66 else "🔊"
@@ -1146,7 +737,7 @@ class DynamicIsland(QMainWindow):
                 result = self.worker.toggle_like(self.current_track_id)
                 if result is not None:
                     self._is_liked = result
-                    QTimer.singleShot(0, self._update_like_button)
+                    self.like_toggled.emit()
         threading.Thread(target=action, daemon=True).start()
         
     def _toggle_repeat(self):
